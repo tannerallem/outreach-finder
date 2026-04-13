@@ -1,0 +1,15 @@
+{
+  "name": "outreach-finder",
+  "version": "1.0.0",
+  "description": "Find local business leads using AI-powered web search",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}

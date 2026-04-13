@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Outreach Finder</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet" />
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #fff; color: #111; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+header { height: 50px; border-bottom: 1px solid #e5e5e5; display: flex; align-items: center; padding: 0 20px; gap: 10px; flex-shrink: 0; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #2563eb; }
+header h1 { font-size: 14px; font-weight: 600; }
+.hdr-r { margin-left: auto; font-size: 12px; color: #aaa; }
+
+.layout { display: grid; grid-template-columns: 320px 1fr; flex: 1; overflow: hidden; }
+
+.left { border-right: 1px solid #e5e5e5; overflow-y: auto; background: #fafafa; }
+.sec { padding: 14px 16px; border-bottom: 1px solid #e5e5e5; }
+.sec-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #bbb; margin-bottom: 10px; }
+
+.field { margin-bottom: 10px; }
+.lbl { display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 4px; }
+input[type=text], select { width: 100%; font-family: 'Inter', sans-serif; font-size: 13px; border: 1px solid #ddd; border-radius: 7px; padding: 8px 10px; background: #fff; color: #111; outline: none; transition: border-color 0.15s; }
+input[type=text]:focus, select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.btag { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 99px; border: 1px solid #ddd; color: #555; cursor: pointer; background: #fff; transition: all 0.12s; user-select: none; }
+.btag:hover { border-color: #2563eb; color: #2563eb; }
+.btag.on { background: #eff6ff; color: #2563eb; border-color: #93c5fd; }
+.stag { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 99px; border: 1px solid #ddd; color: #555; cursor: pointer; background: #fff; transition: all 0.12s; user-select: none; }
+.stag:hover { border-color: #2563eb; color: #2563eb; }
+.stag.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+.sub-box { margin-top: 8px; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px; }
+.sub-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #bbb; margin-bottom: 7px; }
+
+.pill { background: #eff6ff; border-radius: 6px; padding: 7px 10px; font-size: 12px; color: #1d4ed8; margin-bottom: 10px; }
+.pill span { font-weight: 600; }
+
+.btn { width: 100%; padding: 9px; border-radius: 7px; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+.btn-b { background: #2563eb; color: #fff; }
+.btn-b:hover { background: #1d4ed8; }
+.btn-b:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-g { background: #16a34a; color: #fff; }
+.btn-g:hover { background: #15803d; }
+.btn-g:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-o { background: #f59e0b; color: #fff; }
+.btn-o:hover { background: #d97706; }
+.btn-o:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 10px; }
+.stat { background: #fff; border: 1px solid #e5e5e5; border-radius: 7px; padding: 9px; text-align: center; }
+.sn { font-size: 20px; font-weight: 600; line-height: 1; margin-bottom: 2px; }
+.sl { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.pt { background: #f5f5f5; border-radius: 99px; height: 4px; overflow: hidden; margin: 5px 0 3px; }
+.pf { height: 4px; background: #2563eb; border-radius: 99px; transition: width 0.4s; }
+.pr { display: flex; justify-content: space-between; }
+.pr span { font-size: 11px; color: #888; }
+
+.log { background: #fff; border: 1px solid #e5e5e5; border-radius: 7px; padding: 7px 10px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #888; max-height: 85px; overflow-y: auto; line-height: 1.9; }
+
+.wh { padding: 14px 16px; border-top: 1px solid #e5e5e5; }
+.wh-pre { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #888; background: #f8f8f8; border: 1px solid #e5e5e5; border-radius: 7px; padding: 8px 10px; white-space: pre; overflow-x: auto; margin-bottom: 9px; }
+
+.right { display: flex; flex-direction: column; overflow: hidden; }
+.rt { padding: 11px 16px; border-bottom: 1px solid #e5e5e5; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.rt h2 { font-size: 13px; font-weight: 600; }
+.sa { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; cursor: pointer; }
+.sa input { cursor: pointer; accent-color: #2563eb; }
+.tw { flex: 1; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+thead th { padding: 8px 12px; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #bbb; border-bottom: 1px solid #e5e5e5; text-align: left; position: sticky; top: 0; background: #fff; z-index: 1; }
+tbody tr { border-bottom: 1px solid #f5f5f5; cursor: pointer; }
+tbody tr:hover { background: #fafafa; }
+tbody tr:last-child { border-bottom: none; }
+td { padding: 10px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.cc { width: 36px; text-align: center; }
+td input[type=checkbox] { cursor: pointer; accent-color: #2563eb; }
+
+.badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+.br { background: #f0fdf4; color: #16a34a; }
+.bs { background: #fffbeb; color: #d97706; }
+.bn { background: #f5f5f5; color: #bbb; }
+.bq { background: #eff6ff; color: #2563eb; }
+
+.empty { text-align: center; padding: 60px 20px; color: #ddd; }
+.empty p { font-size: 14px; margin-top: 8px; color: #bbb; }
+
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.25); z-index: 99; align-items: center; justify-content: center; }
+.overlay.on { display: flex; }
+.modal { background: #fff; border-radius: 12px; border: 1px solid #e5e5e5; padding: 22px; max-width: 380px; width: 90%; box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 7px; }
+.modal p { font-size: 13px; color: #666; line-height: 1.6; margin-bottom: 16px; }
+.mbtns { display: flex; gap: 8px; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 99px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot"></div>
+  <h1>Outreach Finder</h1>
+</header>
+
+<div class="layout">
+  <div class="left">
+
+    <div class="sec">
+      <div class="sec-lbl">Business type</div>
+      <div class="tags" id="bizTags"></div>
+      <div style="margin-top:8px;">
+        <input type="text" id="bizInput" placeholder="Or type anything..." />
+      </div>
+      <div id="subBox" style="display:none;" class="sub-box">
+        <div class="sub-lbl" id="subLbl">Filter</div>
+        <div class="tags" id="subTags"></div>
+        <input type="text" id="subCustom" placeholder="Or type a custom filter..." style="margin-top:7px;font-size:12px;" />
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-lbl">Location</div>
+      <div class="g2 field">
+        <div><label class="lbl">City</label><input type="text" id="city" value="Colorado Springs" /></div>
+        <div><label class="lbl">State</label><input type="text" id="state" value="CO" maxlength="2" style="text-transform:uppercase;" /></div>
+      </div>
+      <div class="field">
+        <label class="lbl">Radius</label>
+        <select id="radius"><option value="5">5 mi</option><option value="10" selected>10 mi</option><option value="15">15 mi</option><option value="25">25 mi</option><option value="50">50 mi</option></select>
+      </div>
+      <div class="pill">Searching for: <span id="prevTxt">—</span></div>
+      <button class="btn btn-b" id="searchBtn">Search for businesses</button>
+    </div>
+
+    <div class="sec" id="statsSec" style="display:none;">
+      <div class="sec-lbl">Results</div>
+      <div class="stats">
+        <div class="stat"><div class="sn" id="sF" style="color:#2563eb">0</div><div class="sl">Found</div></div>
+        <div class="stat"><div class="sn" id="sE" style="color:#16a34a">0</div><div class="sl">Emails</div></div>
+        <div class="stat"><div class="sn" id="sS" style="color:#7c3aed">0</div><div class="sl">Queued</div></div>
+      </div>
+      <div id="progWrap" style="display:none;margin-bottom:8px;">
+        <div class="pr"><span id="progLbl">Searching...</span><span id="progPct">0%</span></div>
+        <div class="pt"><div class="pf" id="progFill" style="width:0%"></div></div>
+      </div>
+      <button class="btn btn-o" id="enrichBtn" style="margin-bottom:8px;display:none;">Find missing emails</button>
+      <div class="log" id="logBox"></div>
+    </div>
+
+    <div class="wh">
+      <div class="sec-lbl" style="margin-bottom:8px;">Webhook</div>
+      <div class="field"><label class="lbl">Webhook URL</label><input type="text" id="webhookUrl" placeholder="https://your-webhook-url.com/xxxxx" /></div>
+      <div class="field"><label class="lbl">Email subject</label><input type="text" id="emailSubject" value="HVAC Service &amp; Maintenance for {business_name}" /></div>
+      <div style="margin-bottom:8px;"><label class="lbl">Payload preview</label><div class="wh-pre" id="payloadBox">{ "to": "...", "business_name": "...", "subject": "..." }</div></div>
+      <button class="btn btn-g" id="sendBtn" disabled>Send leads to webhook</button>
+      <div style="text-align:center;margin-top:6px;font-size:11px;color:#aaa;" id="selCount">0 selected</div>
+    </div>
+
+  </div>
+
+  <div class="right">
+    <div class="rt">
+      <h2 id="tableTitle">Results</h2>
+      <label class="sa"><input type="checkbox" id="selAll" /> Select all with email</label>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th class="cc"></th><th style="width:29%">Name</th><th style="width:31%">Email</th><th style="width:24%">Location</th><th style="width:16%">Status</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="5"><div class="empty"><div style="font-size:32px;opacity:0.3">&#9906;</div><p>Search to find businesses</p></div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3>Confirm send</h3>
+    <p id="modalMsg"></p>
+    <div class="mbtns">
+      <button class="btn btn-g" style="width:auto;padding:9px 20px;" id="confirmSendBtn">Yes, send leads</button>
+      <button class="btn" style="width:auto;padding:9px 20px;background:#f0f0f0;color:#111;" id="cancelSendBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
