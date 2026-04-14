@@ -97,6 +97,15 @@ td input[type=checkbox] { cursor: pointer; accent-color: #2563eb; }
 .modal p { font-size: 13px; color: #666; line-height: 1.6; margin-bottom: 16px; }
 .mbtns { display: flex; gap: 8px; }
 
+.saved-item { display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #e5e5e5; border-radius: 7px; padding: 7px 10px; gap: 6px; }
+.saved-item-info { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-width: 0; }
+.saved-item-name { font-size: 12px; font-weight: 500; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-item-meta { font-size: 10px; color: #aaa; }
+.saved-btn { font-size: 11px; padding: 4px 10px; border-radius: 5px; border: none; cursor: pointer; font-weight: 500; }
+.saved-btn-load { background: #eff6ff; color: #2563eb; }
+.saved-btn-load:hover { background: #dbeafe; }
+.saved-empty { font-size: 11px; color: #bbb; text-align: center; padding: 10px 0; }
+
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: #e0e0e0; border-radius: 99px; }
 </style>
@@ -150,14 +159,19 @@ td input[type=checkbox] { cursor: pointer; accent-color: #2563eb; }
         <div class="pt"><div class="pf" id="progFill" style="width:0%"></div></div>
       </div>
       <button class="btn btn-o" id="enrichBtn" style="margin-bottom:8px;display:none;">Find missing emails</button>
+      <button class="btn btn-b" id="saveListBtn" style="margin-bottom:8px;display:none;background:#7c3aed;">Save as list</button>
       <div class="log" id="logBox"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-lbl">Saved lists</div>
+      <div id="savedList" style="display:flex;flex-direction:column;gap:6px;"></div>
     </div>
 
     <div class="wh">
       <div class="sec-lbl" style="margin-bottom:8px;">Webhook</div>
       <div class="field"><label class="lbl">Webhook URL</label><input type="text" id="webhookUrl" placeholder="https://your-webhook-url.com/xxxxx" /></div>
       <div class="field"><label class="lbl">Email subject</label><input type="text" id="emailSubject" value="HVAC Service &amp; Maintenance for {business_name}" /></div>
-      <div style="margin-bottom:8px;"><label class="lbl">Payload preview</label><div class="wh-pre" id="payloadBox">{ "to": "...", "business_name": "...", "subject": "..." }</div></div>
       <button class="btn btn-g" id="sendBtn" disabled>Send leads to webhook</button>
       <div style="text-align:center;margin-top:6px;font-size:11px;color:#aaa;" id="selCount">0 selected</div>
     </div>
@@ -171,8 +185,8 @@ td input[type=checkbox] { cursor: pointer; accent-color: #2563eb; }
     </div>
     <div class="tw">
       <table>
-        <thead><tr><th class="cc"></th><th style="width:29%">Name</th><th style="width:31%">Email</th><th style="width:24%">Location</th><th style="width:16%">Status</th></tr></thead>
-        <tbody id="tbody"><tr><td colspan="5"><div class="empty"><div style="font-size:32px;opacity:0.3">&#9906;</div><p>Search to find businesses</p></div></td></tr></tbody>
+        <thead><tr><th class="cc"></th><th style="width:24%">Name</th><th style="width:24%">Email</th><th style="width:15%">Phone</th><th style="width:22%">Location</th><th style="width:12%">Status</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6"><div class="empty"><div style="font-size:32px;opacity:0.3">&#9906;</div><p>Search to find businesses</p></div></td></tr></tbody>
       </table>
     </div>
   </div>

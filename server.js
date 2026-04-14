@@ -113,14 +113,14 @@ app.post('/api/search', async (req, res) => {
 For each business you find, provide:
 - Business name
 - Address
-- Phone number
+- Main office phone number (the primary contact number listed on their website, Google Maps, or Yelp — format as (XXX) XXX-XXXX)
 - Website URL (if available)
 - Email address (if available — look on their website, Google Maps listing, Facebook page, or Yelp page)
 - Category/type
 
 Find as many real, currently operating businesses as possible (aim for 10-20).
 Focus on finding REAL businesses with REAL contact information.
-Look for email addresses on business websites, social media pages, and directory listings.
+Look for phone numbers and email addresses on business websites, social media pages, and directory listings.
 
 Return the results as a JSON array with this exact format:
 [

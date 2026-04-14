@@ -39,6 +39,7 @@ async function init() {
   renderBizTags();
   bindEvents();
   upPrev();
+  loadSavedLists();
 
   // Restore webhook URL
   const saved = localStorage.getItem('webhookUrl');
@@ -74,9 +75,9 @@ function bindEvents() {
   $('radius').addEventListener('change', upPrev);
   $('searchBtn').addEventListener('click', startSearch);
   $('enrichBtn').addEventListener('click', enrichEmails);
+  $('saveListBtn').addEventListener('click', saveCurrentList);
   $('selAll').addEventListener('change', function() { toggleAll(this.checked); });
   $('webhookUrl').addEventListener('input', upStats);
-  $('emailSubject').addEventListener('input', upPayload);
   $('sendBtn').addEventListener('click', confirmSend);
   $('confirmSendBtn').addEventListener('click', executeSend);
   $('cancelSendBtn').addEventListener('click', closeModal);
@@ -150,20 +151,6 @@ function upPrev() {
   const r = $('radius').value;
   const loc = [city, state].filter(Boolean).join(', ');
   $('prevTxt').textContent = ft ? (ft + (loc ? ' near ' + loc + ' (' + r + ' mi)' : '')) : '—';
-  upPayload();
-}
-
-function upPayload() {
-  const sel = biz.find(b => b.selected && b.email);
-  const subj = $('emailSubject').value;
-  const name = sel ? sel.name : 'Business Name';
-  const email = sel ? sel.email : 'contact@business.com';
-  $('payloadBox').textContent = JSON.stringify({
-    to: email,
-    business_name: name,
-    location: sel ? (sel.address || sel.location || '') : 'City, State',
-    subject: subj.replace(/{business_name}/g, name)
-  }, null, 2);
 }
 
 // ── Logging & progress ──────────────────────────────────────────
@@ -194,7 +181,8 @@ function upStats() {
   const missing = biz.filter(b => !b.email).length;
   $('enrichBtn').style.display = (biz.length > 0 && missing > 0) ? 'block' : 'none';
 
-  upPayload();
+  // Show/hide save list button
+  $('saveListBtn').style.display = biz.length > 0 ? 'block' : 'none';
 }
 
 // ── Table ────────────────────────────────────────────────────────
@@ -214,7 +202,7 @@ window.toggleRow = toggleRow;
 function renderTable() {
   const tb = $('tbody');
   if (!biz.length) {
-    tb.innerHTML = '<tr><td colspan="5"><div class="empty"><div style="font-size:32px;opacity:0.3">&#9906;</div><p>Search to find businesses</p></div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="6"><div class="empty"><div style="font-size:32px;opacity:0.3">&#9906;</div><p>Search to find businesses</p></div></td></tr>';
     upStats();
     return;
   }
@@ -231,6 +219,7 @@ function renderTable() {
       <td class="cc"><input type="checkbox" ${b.selected ? 'checked' : ''} ${(!b.email || b.sent) ? 'disabled' : ''} onclick="event.stopPropagation();toggleRow(${i})" /></td>
       <td style="font-weight:500" title="${esc(b.name)}">${esc(b.name)}</td>
       <td style="color:#2563eb;font-size:12px;font-family:'JetBrains Mono',monospace" title="${esc(b.email || '')}">${b.email || '<span style="color:#ddd;font-family:Inter,sans-serif">—</span>'}</td>
+      <td style="color:#555;font-size:12px;font-family:'JetBrains Mono',monospace" title="${esc(b.phone || '')}">${b.phone ? esc(b.phone) : '<span style="color:#ddd;font-family:Inter,sans-serif">—</span>'}</td>
       <td style="color:#888" title="${esc(loc)}">${esc(loc)}</td>
       <td>${statusBadge}</td>
     </tr>`;
@@ -421,6 +410,104 @@ async function executeSend() {
   }
 
   $('sendBtn').disabled = false;
+}
+
+// ── Saved lists ─────────────────────────────────────────────────
+async function saveCurrentList() {
+  if (!biz.length) return;
+
+  const city = $('city').value.trim();
+  const state = $('state').value.trim();
+  const suggested = [activeBizLabel || 'results', city, state].filter(Boolean).join('_').toLowerCase().replace(/\s+/g, '_');
+  const name = prompt('Save this list as:', suggested);
+  if (!name) return;
+
+  try {
+    // Strip UI-only flags before saving
+    const toSave = biz.map(b => ({
+      id: b.id,
+      name: b.name,
+      email: b.email || '',
+      phone: b.phone || '',
+      address: b.address || '',
+      website: b.website || '',
+      category: b.category || ''
+    }));
+
+    const res = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, businesses: toSave })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Save failed');
+
+    log('> Saved list as "' + name + '" (' + toSave.length + ' businesses).');
+    loadSavedLists();
+  } catch (err) {
+    log('! Save error: ' + err.message);
+  }
+}
+
+async function loadSavedLists() {
+  try {
+    const res = await fetch('/api/saves');
+    const saves = await res.json();
+    const container = $('savedList');
+
+    if (!saves.length) {
+      container.innerHTML = '<div class="saved-empty">No saved lists yet.</div>';
+      return;
+    }
+
+    container.innerHTML = saves.map(s => `
+      <div class="saved-item">
+        <div class="saved-item-info">
+          <span class="saved-item-name" title="${esc(s.name)}">${esc(s.name)}</span>
+          <span class="saved-item-meta">${s.count} businesses · ${new Date(s.savedAt).toLocaleDateString()}</span>
+        </div>
+        <button class="saved-btn saved-btn-load" data-name="${esc(s.name)}">Load</button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.saved-btn-load').forEach(btn => {
+      btn.addEventListener('click', () => loadSavedList(btn.dataset.name));
+    });
+  } catch (err) {
+    console.error('Failed to load saves:', err);
+  }
+}
+
+async function loadSavedList(name) {
+  try {
+    const res = await fetch('/api/load/' + encodeURIComponent(name));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Load failed');
+
+    const loaded = data.businesses || [];
+    biz = loaded.map(b => ({
+      id: b.id || (Date.now() + '-' + Math.random()),
+      name: b.name || 'Unknown',
+      email: b.email || null,
+      phone: b.phone || '',
+      address: b.address || '',
+      location: b.address || '',
+      website: b.website || '',
+      category: b.category || '',
+      selected: !!b.email,
+      sent: false,
+      searching: false
+    }));
+
+    $('statsSec').style.display = 'block';
+    $('progWrap').style.display = 'none';
+    $('tableTitle').textContent = name;
+    $('logBox').innerHTML = '';
+    log('> Loaded "' + name + '" (' + biz.length + ' businesses).');
+    renderTable();
+  } catch (err) {
+    alert('Failed to load list: ' + err.message);
+  }
 }
 
 // ── Boot ─────────────────────────────────────────────────────────
