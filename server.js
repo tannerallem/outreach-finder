@@ -7,11 +7,27 @@ const Anthropic = require('@anthropic-ai/sdk').default;
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
+const LISTS_FILE = path.join(DATA_DIR, 'lists.json');
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+if (!fs.existsSync(LISTS_FILE)) fs.writeFileSync(LISTS_FILE, JSON.stringify({ lists: {} }, null, 2));
+
+function readLists() {
+  try {
+    const raw = fs.readFileSync(LISTS_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed.lists || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLists(lists) {
+  fs.writeFileSync(LISTS_FILE, JSON.stringify({ lists }, null, 2));
+}
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -110,17 +126,25 @@ app.post('/api/search', async (req, res) => {
 
   const searchPrompt = `Search the web and find ${typeLabel}${filterText} businesses in ${city}, ${state}${radiusText}.
 
-For each business you find, provide:
-- Business name
-- Address
-- Main office phone number (the primary contact number listed on their website, Google Maps, or Yelp — format as (XXX) XXX-XXXX)
-- Website URL (if available)
-- Email address (if available — look on their website, Google Maps listing, Facebook page, or Yelp page)
-- Category/type
+For EACH business, do a DEEP contact-info search. You MUST try multiple sources before giving up on a field:
+  1. The business's official website (check Contact, About, Footer, and Staff pages)
+  2. Their Google Maps / Google Business Profile listing
+  3. Their Yelp page
+  4. Their Facebook / Instagram / LinkedIn business page
+  5. Industry directories (Yellow Pages, BBB, Angi, chamber of commerce listings)
+  6. If no email appears on the homepage, try fetching /contact, /about, /team, /staff pages
+  7. If still nothing, search for "<business name> email" and "<business name> contact"
 
-Find as many real, currently operating businesses as possible (aim for 10-20).
-Focus on finding REAL businesses with REAL contact information.
-Look for phone numbers and email addresses on business websites, social media pages, and directory listings.
+For each business collect ALL of the following (leave blank ONLY if truly unavailable after multiple attempts):
+- name: Business name
+- address: Full street address including city, state, and zip
+- phone: Main office phone number, formatted as (XXX) XXX-XXXX
+- website: Full website URL (with https://)
+- email: Primary contact email (info@, contact@, hello@, or a specific person)
+- email2: Secondary email if one exists (e.g. owner's direct email, sales@, support@) — leave blank if there truly is only one
+- category: Business category/type
+
+Aim for 10-20 real, currently operating businesses. Make multiple search attempts per business if the first search doesn't surface an email — try different queries and sources before giving up.
 
 Return the results as a JSON array with this exact format:
 [
@@ -130,6 +154,7 @@ Return the results as a JSON array with this exact format:
     "phone": "(555) 123-4567",
     "website": "https://example.com",
     "email": "contact@example.com",
+    "email2": "owner@example.com",
     "category": "Category Type"
   }
 ]
@@ -139,8 +164,8 @@ Return ONLY the JSON array, no other text.`;
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
+      max_tokens: 12000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 30 }],
       messages: [{ role: 'user', content: searchPrompt }]
     });
 
@@ -172,6 +197,7 @@ Return ONLY the JSON array, no other text.`;
       phone: b.phone || '',
       website: b.website || '',
       email: b.email || '',
+      email2: b.email2 || '',
       category: b.category || typeLabel,
       businessType: typeLabel,
       subFilter: subFilter || '',
@@ -188,30 +214,68 @@ Return ONLY the JSON array, no other text.`;
 });
 
 // ── POST /api/search/email-enrich ──────────────────────────────────
-// Second-pass: try to find emails for businesses that are missing them
+// Second-pass: deep contact-info search for businesses missing fields.
+// Fills in email, email2, phone, website, and address where missing.
 app.post('/api/search/email-enrich', async (req, res) => {
   const { businesses } = req.body;
-  const missing = businesses.filter(b => !b.email);
+  const incomplete = businesses.filter(b =>
+    !b.email || !b.email2 || !b.phone || !b.website || !b.address
+  );
 
-  if (missing.length === 0) return res.json({ businesses });
+  if (incomplete.length === 0) return res.json({ businesses });
 
-  const names = missing.map(b => `- ${b.name}, ${b.address} (website: ${b.website || 'unknown'})`).join('\n');
+  const listing = incomplete.map(b => {
+    const have = [];
+    if (b.website) have.push(`website: ${b.website}`);
+    if (b.phone) have.push(`phone: ${b.phone}`);
+    if (b.address) have.push(`address: ${b.address}`);
+    if (b.email) have.push(`email: ${b.email}`);
+    return `- ${b.name}${have.length ? ' (' + have.join(', ') + ')' : ''}`;
+  }).join('\n');
 
-  const prompt = `Search the web for contact email addresses for these businesses:
-${names}
+  const prompt = `Do a DEEP contact-info search for each of these businesses. Try MULTIPLE search attempts and sources before giving up on any field.
 
-Look on their official websites, Facebook pages, Yelp listings, Google Maps, and any directory sites.
+For each business below, I want:
+- email: primary contact email
+- email2: a secondary email if one exists (owner, sales@, support@, etc.)
+- phone: main office phone formatted as (XXX) XXX-XXXX
+- website: full website URL with https://
+- address: full street address with city, state, zip
 
-Return a JSON array with ONLY the businesses where you found an email:
-[{"name": "Business Name", "email": "found@email.com"}]
+Search strategy for each business (use ALL of these until you find what you need):
+1. Official website — check Contact, About, Footer, Team, Staff pages
+2. Fetch /contact, /about, /team, /staff subpages if the homepage has no email
+3. Google Maps / Google Business Profile
+4. Yelp listing
+5. Facebook / Instagram / LinkedIn business pages
+6. Yellow Pages, BBB, Angi, industry directories
+7. Search queries like "<business name> email", "<business name> contact", "<business name> owner"
+8. If you see a "mailto:" link anywhere, use that email
 
-Return ONLY the JSON array. If you found no emails, return [].`;
+Businesses to research:
+${listing}
+
+Return a JSON array with an entry for every business where you found ANY new info. Only include fields you actually found (do not echo fields that were already provided). Use the exact business name as given.
+
+Format:
+[
+  {
+    "name": "Business Name",
+    "email": "found@email.com",
+    "email2": "owner@email.com",
+    "phone": "(555) 123-4567",
+    "website": "https://example.com",
+    "address": "123 Main St, City, ST 12345"
+  }
+]
+
+Return ONLY the JSON array. If you found nothing new for anyone, return [].`;
 
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
+      max_tokens: 8000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 30 }],
       messages: [{ role: 'user', content: prompt }]
     });
 
@@ -226,21 +290,31 @@ Return ONLY the JSON array. If you found no emails, return [].`;
       try { found = JSON.parse(jsonMatch[0]); } catch { found = []; }
     }
 
-    // Merge found emails back
-    const emailMap = new Map(found.map(f => [f.name?.toLowerCase(), f.email]));
+    // Merge every found field back (only fill blanks — don't overwrite existing data)
+    const foundMap = new Map(found.map(f => [f.name?.toLowerCase(), f]));
     const enriched = businesses.map(b => {
-      const foundEmail = emailMap.get(b.name?.toLowerCase());
-      return foundEmail ? { ...b, email: foundEmail } : b;
+      const match = foundMap.get(b.name?.toLowerCase());
+      if (!match) return b;
+      return {
+        ...b,
+        email: b.email || match.email || '',
+        email2: b.email2 || match.email2 || '',
+        phone: b.phone || match.phone || '',
+        website: b.website || match.website || '',
+        address: b.address || match.address || ''
+      };
     });
 
     res.json({ businesses: enriched });
   } catch (err) {
-    console.error('Email enrichment error:', err);
+    console.error('Enrichment error:', err);
     res.json({ businesses }); // Return original on failure
   }
 });
 
 // ── POST /api/webhook ──────────────────────────────────────────────
+// Sends each lead as its own webhook POST, one at a time, so downstream
+// tools (e.g. n8n) can process each lead individually.
 app.post('/api/webhook', async (req, res) => {
   const { webhookUrl, leads } = req.body;
 
@@ -248,53 +322,75 @@ app.post('/api/webhook', async (req, res) => {
     return res.status(400).json({ error: 'webhookUrl and leads are required' });
   }
 
-  try {
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leads, sentAt: new Date().toISOString(), total: leads.length })
-    });
+  const results = [];
+  let sent = 0;
+  let failed = 0;
 
-    if (!response.ok) {
-      throw new Error(`Webhook returned ${response.status}: ${response.statusText}`);
+  for (const lead of leads) {
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...lead, sentAt: new Date().toISOString() })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Webhook returned ${response.status}: ${response.statusText}`);
+      }
+
+      sent++;
+      results.push({ lead: lead.business_name || lead.to, ok: true, status: response.status });
+    } catch (err) {
+      failed++;
+      results.push({ lead: lead.business_name || lead.to, ok: false, error: err.message });
+      console.error(`Webhook error for lead "${lead.business_name || lead.to}":`, err.message);
     }
-
-    res.json({ success: true, status: response.status });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).json({ error: err.message });
   }
+
+  res.json({ success: failed === 0, sent, failed, total: leads.length, results });
 });
 
 // ── POST /api/save ─────────────────────────────────────────────────
+// Stores the list under its name inside a single persistent JSON file.
 app.post('/api/save', (req, res) => {
   const { name, businesses } = req.body;
-  const safeName = (name || 'results').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filePath = path.join(DATA_DIR, `${safeName}.json`);
+  if (!name || !businesses) return res.status(400).json({ error: 'name and businesses are required' });
 
-  fs.writeFileSync(filePath, JSON.stringify({ savedAt: new Date().toISOString(), businesses }, null, 2));
-  res.json({ success: true, file: `${safeName}.json` });
+  const lists = readLists();
+  lists[name] = { savedAt: new Date().toISOString(), businesses };
+  writeLists(lists);
+
+  res.json({ success: true, name });
 });
 
 // ── GET /api/saves ─────────────────────────────────────────────────
 app.get('/api/saves', (_req, res) => {
-  const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.json'));
-  const saves = files.map(f => {
-    const data = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf-8'));
-    return { name: f.replace('.json', ''), file: f, count: data.businesses?.length || 0, savedAt: data.savedAt };
-  });
+  const lists = readLists();
+  const saves = Object.entries(lists).map(([name, data]) => ({
+    name,
+    count: data.businesses?.length || 0,
+    savedAt: data.savedAt
+  }));
+  // Sort most recent first
+  saves.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
   res.json(saves);
 });
 
 // ── GET /api/load/:name ────────────────────────────────────────────
 app.get('/api/load/:name', (req, res) => {
-  const safeName = req.params.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filePath = path.join(DATA_DIR, `${safeName}.json`);
-
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-
-  const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  const lists = readLists();
+  const data = lists[req.params.name];
+  if (!data) return res.status(404).json({ error: 'List not found' });
   res.json(data);
+});
+
+// ── DELETE /api/saves/:name ────────────────────────────────────────
+app.delete('/api/saves/:name', (req, res) => {
+  const lists = readLists();
+  if (!lists[req.params.name]) return res.status(404).json({ error: 'List not found' });
+  delete lists[req.params.name];
+  writeLists(lists);
+  res.json({ success: true });
 });
 
 // ── POST /api/import ───────────────────────────────────────────────

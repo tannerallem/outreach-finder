@@ -218,7 +218,7 @@ function renderTable() {
     return `<tr onclick="toggleRow(${i})">
       <td class="cc"><input type="checkbox" ${b.selected ? 'checked' : ''} ${(!b.email || b.sent) ? 'disabled' : ''} onclick="event.stopPropagation();toggleRow(${i})" /></td>
       <td style="font-weight:500" title="${esc(b.name)}">${esc(b.name)}</td>
-      <td style="color:#2563eb;font-size:12px;font-family:'JetBrains Mono',monospace" title="${esc(b.email || '')}">${b.email || '<span style="color:#ddd;font-family:Inter,sans-serif">—</span>'}</td>
+      <td style="color:#2563eb;font-size:12px;font-family:'JetBrains Mono',monospace" title="${esc((b.email || '') + (b.email2 ? ' / ' + b.email2 : ''))}">${b.email || '<span style="color:#ddd;font-family:Inter,sans-serif">—</span>'}${b.email2 ? '<span style="color:#888;font-size:10px;margin-left:4px;font-family:Inter,sans-serif">+1</span>' : ''}</td>
       <td style="color:#555;font-size:12px;font-family:'JetBrains Mono',monospace" title="${esc(b.phone || '')}">${b.phone ? esc(b.phone) : '<span style="color:#ddd;font-family:Inter,sans-serif">—</span>'}</td>
       <td style="color:#888" title="${esc(loc)}">${esc(loc)}</td>
       <td>${statusBadge}</td>
@@ -274,6 +274,7 @@ async function startSearch() {
       id: b.id,
       name: b.name || 'Unknown',
       email: b.email || null,
+      email2: b.email2 || '',
       address: b.address || '',
       location: b.address || (b.searchCity + ', ' + b.searchState),
       phone: b.phone || '',
@@ -333,16 +334,20 @@ async function enrichEmails() {
     const data = await res.json();
     const enriched = data.businesses || [];
 
-    // Merge enriched emails back
+    // Merge enriched fields back — only fill blanks
     let newFound = 0;
     for (const eb of enriched) {
       const match = biz.find(b => b.id === eb.id || b.name.toLowerCase() === (eb.name || '').toLowerCase());
-      if (match && !match.email && eb.email) {
-        match.email = eb.email;
-        match.selected = true;
-        newFound++;
-        log('  + ' + match.name + ': ' + eb.email);
-      }
+      if (!match) continue;
+
+      const gained = [];
+      if (!match.email && eb.email)     { match.email = eb.email;     match.selected = true; gained.push('email'); newFound++; }
+      if (!match.email2 && eb.email2)   { match.email2 = eb.email2;   gained.push('email2'); }
+      if (!match.phone && eb.phone)     { match.phone = eb.phone;     gained.push('phone'); }
+      if (!match.website && eb.website) { match.website = eb.website; gained.push('website'); }
+      if (!match.address && eb.address) { match.address = eb.address; match.location = eb.address; gained.push('address'); }
+
+      if (gained.length) log('  + ' + match.name + ': ' + gained.join(', '));
     }
 
     renderTable();
@@ -379,14 +384,16 @@ async function executeSend() {
 
   localStorage.setItem('webhookUrl', wh);
   $('sendBtn').disabled = true;
-  log('> Sending ' + selected.length + ' leads to webhook...');
+  log('> Sending ' + selected.length + ' leads to webhook (one at a time)...');
 
   try {
     const subj = $('emailSubject').value;
     const leads = selected.map(b => ({
       to: b.email,
+      email2: b.email2 || '',
       business_name: b.name,
       location: b.address || b.location || '',
+      address: b.address || '',
       phone: b.phone || '',
       website: b.website || '',
       subject: subj.replace(/{business_name}/g, b.name)
@@ -401,8 +408,19 @@ async function executeSend() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Webhook failed');
 
-    selected.forEach(b => { b.sent = true; });
-    log('> All ' + selected.length + ' leads sent to webhook!');
+    // Mark each lead as sent based on per-lead result
+    const resultByLead = new Map((data.results || []).map(r => [r.lead, r]));
+    selected.forEach(b => {
+      const r = resultByLead.get(b.name) || resultByLead.get(b.email);
+      if (r && r.ok) {
+        b.sent = true;
+        log('  + ' + b.name + ' → ' + b.email);
+      } else if (r) {
+        log('  ! ' + b.name + ' failed: ' + r.error);
+      }
+    });
+
+    log('> Done. ' + data.sent + ' sent, ' + data.failed + ' failed.');
     renderTable();
 
   } catch (err) {
@@ -428,6 +446,7 @@ async function saveCurrentList() {
       id: b.id,
       name: b.name,
       email: b.email || '',
+      email2: b.email2 || '',
       phone: b.phone || '',
       address: b.address || '',
       website: b.website || '',
@@ -489,6 +508,7 @@ async function loadSavedList(name) {
       id: b.id || (Date.now() + '-' + Math.random()),
       name: b.name || 'Unknown',
       email: b.email || null,
+      email2: b.email2 || '',
       phone: b.phone || '',
       address: b.address || '',
       location: b.address || '',
