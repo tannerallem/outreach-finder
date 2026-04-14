@@ -126,25 +126,17 @@ app.post('/api/search', async (req, res) => {
 
   const searchPrompt = `Search the web and find ${typeLabel}${filterText} businesses in ${city}, ${state}${radiusText}.
 
-For EACH business, do a DEEP contact-info search. You MUST try multiple sources before giving up on a field:
-  1. The business's official website (check Contact, About, Footer, and Staff pages)
-  2. Their Google Maps / Google Business Profile listing
-  3. Their Yelp page
-  4. Their Facebook / Instagram / LinkedIn business page
-  5. Industry directories (Yellow Pages, BBB, Angi, chamber of commerce listings)
-  6. If no email appears on the homepage, try fetching /contact, /about, /team, /staff pages
-  7. If still nothing, search for "<business name> email" and "<business name> contact"
+For each business you find, provide:
+- Business name
+- Address
+- Main office phone number (the primary contact number listed on their website, Google Maps, or Yelp — format as (XXX) XXX-XXXX)
+- Website URL (if available)
+- Email address (if available — look on their website, Google Maps listing, Facebook page, or Yelp page)
+- Category/type
 
-For each business collect ALL of the following (leave blank ONLY if truly unavailable after multiple attempts):
-- name: Business name
-- address: Full street address including city, state, and zip
-- phone: Main office phone number, formatted as (XXX) XXX-XXXX
-- website: Full website URL (with https://)
-- email: Primary contact email (info@, contact@, hello@, or a specific person)
-- email2: Secondary email if one exists (e.g. owner's direct email, sales@, support@) — leave blank if there truly is only one
-- category: Business category/type
-
-Aim for 10-20 real, currently operating businesses. Make multiple search attempts per business if the first search doesn't surface an email — try different queries and sources before giving up.
+Find as many real, currently operating businesses as possible (aim for 10-20).
+Focus on finding REAL businesses with REAL contact information.
+Look for phone numbers and email addresses on business websites, social media pages, and directory listings.
 
 Return the results as a JSON array with this exact format:
 [
@@ -154,7 +146,6 @@ Return the results as a JSON array with this exact format:
     "phone": "(555) 123-4567",
     "website": "https://example.com",
     "email": "contact@example.com",
-    "email2": "owner@example.com",
     "category": "Category Type"
   }
 ]
@@ -164,8 +155,8 @@ Return ONLY the JSON array, no other text.`;
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 12000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 30 }],
+      max_tokens: 8000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
       messages: [{ role: 'user', content: searchPrompt }]
     });
 
@@ -197,7 +188,6 @@ Return ONLY the JSON array, no other text.`;
       phone: b.phone || '',
       website: b.website || '',
       email: b.email || '',
-      email2: b.email2 || '',
       category: b.category || typeLabel,
       businessType: typeLabel,
       subFilter: subFilter || '',
@@ -214,68 +204,30 @@ Return ONLY the JSON array, no other text.`;
 });
 
 // ── POST /api/search/email-enrich ──────────────────────────────────
-// Second-pass: deep contact-info search for businesses missing fields.
-// Fills in email, email2, phone, website, and address where missing.
+// Second-pass: try to find emails for businesses that are missing them
 app.post('/api/search/email-enrich', async (req, res) => {
   const { businesses } = req.body;
-  const incomplete = businesses.filter(b =>
-    !b.email || !b.email2 || !b.phone || !b.website || !b.address
-  );
+  const missing = businesses.filter(b => !b.email);
 
-  if (incomplete.length === 0) return res.json({ businesses });
+  if (missing.length === 0) return res.json({ businesses });
 
-  const listing = incomplete.map(b => {
-    const have = [];
-    if (b.website) have.push(`website: ${b.website}`);
-    if (b.phone) have.push(`phone: ${b.phone}`);
-    if (b.address) have.push(`address: ${b.address}`);
-    if (b.email) have.push(`email: ${b.email}`);
-    return `- ${b.name}${have.length ? ' (' + have.join(', ') + ')' : ''}`;
-  }).join('\n');
+  const names = missing.map(b => `- ${b.name}, ${b.address} (website: ${b.website || 'unknown'})`).join('\n');
 
-  const prompt = `Do a DEEP contact-info search for each of these businesses. Try MULTIPLE search attempts and sources before giving up on any field.
+  const prompt = `Search the web for contact email addresses for these businesses:
+${names}
 
-For each business below, I want:
-- email: primary contact email
-- email2: a secondary email if one exists (owner, sales@, support@, etc.)
-- phone: main office phone formatted as (XXX) XXX-XXXX
-- website: full website URL with https://
-- address: full street address with city, state, zip
+Look on their official websites, Facebook pages, Yelp listings, Google Maps, and any directory sites.
 
-Search strategy for each business (use ALL of these until you find what you need):
-1. Official website — check Contact, About, Footer, Team, Staff pages
-2. Fetch /contact, /about, /team, /staff subpages if the homepage has no email
-3. Google Maps / Google Business Profile
-4. Yelp listing
-5. Facebook / Instagram / LinkedIn business pages
-6. Yellow Pages, BBB, Angi, industry directories
-7. Search queries like "<business name> email", "<business name> contact", "<business name> owner"
-8. If you see a "mailto:" link anywhere, use that email
+Return a JSON array with ONLY the businesses where you found an email:
+[{"name": "Business Name", "email": "found@email.com"}]
 
-Businesses to research:
-${listing}
-
-Return a JSON array with an entry for every business where you found ANY new info. Only include fields you actually found (do not echo fields that were already provided). Use the exact business name as given.
-
-Format:
-[
-  {
-    "name": "Business Name",
-    "email": "found@email.com",
-    "email2": "owner@email.com",
-    "phone": "(555) 123-4567",
-    "website": "https://example.com",
-    "address": "123 Main St, City, ST 12345"
-  }
-]
-
-Return ONLY the JSON array. If you found nothing new for anyone, return [].`;
+Return ONLY the JSON array. If you found no emails, return [].`;
 
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 30 }],
+      max_tokens: 4000,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
       messages: [{ role: 'user', content: prompt }]
     });
 
@@ -290,24 +242,16 @@ Return ONLY the JSON array. If you found nothing new for anyone, return [].`;
       try { found = JSON.parse(jsonMatch[0]); } catch { found = []; }
     }
 
-    // Merge every found field back (only fill blanks — don't overwrite existing data)
-    const foundMap = new Map(found.map(f => [f.name?.toLowerCase(), f]));
+    // Merge found emails back
+    const emailMap = new Map(found.map(f => [f.name?.toLowerCase(), f.email]));
     const enriched = businesses.map(b => {
-      const match = foundMap.get(b.name?.toLowerCase());
-      if (!match) return b;
-      return {
-        ...b,
-        email: b.email || match.email || '',
-        email2: b.email2 || match.email2 || '',
-        phone: b.phone || match.phone || '',
-        website: b.website || match.website || '',
-        address: b.address || match.address || ''
-      };
+      const foundEmail = emailMap.get(b.name?.toLowerCase());
+      return foundEmail ? { ...b, email: foundEmail } : b;
     });
 
     res.json({ businesses: enriched });
   } catch (err) {
-    console.error('Enrichment error:', err);
+    console.error('Email enrichment error:', err);
     res.json({ businesses }); // Return original on failure
   }
 });
